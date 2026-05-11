@@ -190,7 +190,7 @@ function _evaluate_UINode_radio_button(config) {
 	if empty_struct(schema) {
 		__UI_register_props(["on_click"],	[UINodeValue.CALLABLE],	schema)
 		__UI_register_props(["group"],		[UINodeValue.STRING],	schema)
-		__UI_register_props(["on"],			[UINodeValue.BOOL],		schema)
+		__UI_register_props(["value"],		[UINodeValue.BOOL],		schema)
 	}
 	__check_wrong_value(schema, config, "radio_button")
 }
