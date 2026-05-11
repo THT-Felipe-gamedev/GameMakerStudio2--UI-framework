@@ -239,7 +239,8 @@ var checkb_creator = function(_parent, glob_val) constructor {
 	
 	// Sync global variable on change
 	on_change = function(node) {
-		global[$ node.inner.context.my_global] = node.value
+		node.assets.image_index					= node.value
+		global[$ node.inner.context.my_global]	= node.value
 	}
 	
 	parent = UINode_get_id(_parent)

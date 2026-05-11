@@ -23,8 +23,8 @@ function __UI_radio_button_step_main(node) {
 				var node_stc	= get_UINode_by_id(node_id)	// Gets the node
 				
 				// Evaluate it
-				node_stc.active				= (node_id == node.core.id)	// If haven't id turn it off
-				node_stc.assets.image_index	= node_stc.active			// image index equals active
+				node_stc.value				= (node_id == node.core.id)	// If haven't id turn it off
+				node_stc.assets.image_index	= node_stc.value			// image index equals active
 			}
 		}
 	}
