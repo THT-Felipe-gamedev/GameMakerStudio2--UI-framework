@@ -179,7 +179,7 @@ function _create_label(config) : _create_UI_element(config) constructor {
 @desc	Creates a checkbox UINode struct
 */
 function _create_checkbox(config) : _create_UI_element(config) constructor {
-	value	= config[$ "active"]	?? false
+	value	= config[$ "value"]	?? false
 }
 #endregion
 
@@ -190,8 +190,8 @@ function _create_checkbox(config) : _create_UI_element(config) constructor {
 @desc	Creates a radio button UINode struct
 */
 function _create_radio_button(config) : _create_UI_element(config) constructor {
-	group		= config[$ "group"]		?? "default"
-	value		= config[$ "active"]	?? false
+	group		= config[$ "group"]	?? "default"
+	value		= config[$ "value"]	?? false
 
     draw_spr	= 1
 }
