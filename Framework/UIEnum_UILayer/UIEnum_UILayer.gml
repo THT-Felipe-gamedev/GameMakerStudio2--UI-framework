@@ -1,0 +1,6 @@
+enum UILayer {
+	BACKGROUND,
+	NORMAL,
+	FOREGROUND,
+	OVERLAY
+}

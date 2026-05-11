@@ -1,0 +1,4 @@
+enum UICoord {
+	X,
+	Y
+}

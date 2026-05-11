@@ -1,0 +1,4 @@
+enum UINodeDrawMode {
+	CONTENT,
+	WRAP
+}
