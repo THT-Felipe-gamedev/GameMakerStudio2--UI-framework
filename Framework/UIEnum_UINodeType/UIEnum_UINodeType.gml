@@ -54,6 +54,13 @@ enum UINodeTextboxType {
 	VERTICAL
 }
 
+enum UINodeTextboxAllow {
+	NUMBER,
+	VARIABLE,
+	FLOAT,
+	ANY
+}
+
 enum UINodeDropdownStyle {
 	COLOR,
 	GRADIENT,

@@ -55,7 +55,7 @@ function array_count(value, array) {
 @param	{Array<Real>}	array	Array to get the greater value
 @return	{Real}	The greater value found
 
-@desc	Gets the greater value in an array and returns it. If array is empty, returns 0
+@desc	Gets the greater value in an array and returns it. If array is empty, returns undefined
 */
 function array_max(array) {
 	var length	= array_length(array)
@@ -79,7 +79,7 @@ function array_max(array) {
 @param	{Array<Real>}	array	Array to get the lowest value
 @return	{Real}	The lowest value found
 
-@desc	Gets the lowest value in an array and returns it. If array is empty, returns 0
+@desc	Gets the lowest value in an array and returns it. If array is empty, returns undefined
 */
 function array_min(array) {
 	var length	= array_length(array)

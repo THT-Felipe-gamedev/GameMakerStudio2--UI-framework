@@ -13,19 +13,7 @@ function __UI_radio_button_step_main(node) {
 	// See if was clicked in it
 	if mouse_check_button_pressed(mb_left) {
 		if node.core.hovered {
-			
-			var _group		= node.group					// Gets group name
-			var _group_same	= UINode_get_same_group(_group)	// Gets all radio in this group
-			
-			// Turns of all elements of the group
-			for(var i = 0; i < array_length(_group_same); i ++) {
-				var node_id		= _group_same[i]			// Gets the node id
-				var node_stc	= get_UINode_by_id(node_id)	// Gets the node
-				
-				// Evaluate it
-				node_stc.value				= (node_id == node.core.id)	// If haven't id turn it off
-				node_stc.assets.image_index	= node_stc.value			// image index equals active
-			}
+			UI_radio_button_set(node.group, node.core.id)
 		}
 	}
 }

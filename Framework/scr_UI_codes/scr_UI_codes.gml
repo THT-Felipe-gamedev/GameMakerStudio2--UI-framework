@@ -41,7 +41,7 @@ function __UINode_destroyer(node, main) {
 	var _layer_g	= UI.layers[$ node.UI_layer.id][$ node.UI_layer.group]
 	
 	var _fat_ind	= array_get_index(parent.core.children,	_id)	// parent index
-	var _group_ind	= array_get_index(_layer_g.nodes,	_id)	// Layer group index
+	var _group_ind	= array_get_index(_layer_g.nodes,	_id)		// Layer group index
 	var node_index	= array_get_index(UI.nodes,	node)
 	
 	array_delete(parent.core.children,	_fat_ind,	1)		// Delets itself from parent
@@ -520,6 +520,36 @@ function GUI_height()	{return display_get_gui_height()}
 
 /**
 @public
+
+@param	{Struct, String}	node_or_id	The UINode (or it id) to set translate x
+@param	{Real, String}		value		The new value to the translate (Real, Expression, Percentage)
+
+@desc Chances an UINode trasnform x
+*/
+function set_UINode_translate_x(node_or_id, value) {
+	var node = _UINode_resolve(node_or_id)
+	
+	node.offset.translate.x = value
+	_mark_dirty(node, UINodeDirtyFlag.WORLD)
+}
+
+/**
+@public
+
+@param	{Struct, String}	node_or_id	The UINode (or it id) to set translate y
+@param	{Real, String}		value		The new value to the translate (Real, Expression, Percentage)
+
+@desc Chances an UINode trasnform y
+*/
+function set_UINode_translate_y(node_or_id, value) {
+	var node = _UINode_resolve(node_or_id)
+	
+	node.offset.translate.y = value
+	_mark_dirty(node, UINodeDirtyFlag.WORLD)
+}
+
+/**
+@public
 @pure
 @self	global
 
@@ -597,8 +627,8 @@ function UI_layer_add_group(UILayer_id, layer_name, prior) {
 @public
 
 @param	{Struct}		node		UINode to add children
-@param	{Struct}		index		Where in the parent it shall be add
 @param	{Real, struct}	child_id	child or it id to add
+@param	{real}			index		Where in the parent it shall be add
 
 @desc Add children to a UINode
 */
@@ -682,11 +712,13 @@ function hide_UINode_by_class(class) {
 	
 	for (var i = 0; i < many_node; i ++) {
 		var node = get_UINode_by_id(global.UI.nodes[i])
+		
 		if node.core.class == class {
 			node.core.visible	= false
 		}
 	}
 }
+
 
 /**
 @public
@@ -721,7 +753,7 @@ function show_all_UINode() {
 	var many_node	= array_length(UI_nodes)
 	
 	for (var i = 0; i < many_node; i ++) {
-		var node			= UI_nodes[i]	
+		var node			= get_UINode_by_id(UI_nodes[i])
 		node.core.visible	= true
 	}
 }
@@ -738,9 +770,9 @@ function show_UINode_by_class(class) {
 	
 	for (var i = 0; i < many_node; i ++) {
 		
-		var node = UI_nodes[i]			// Get on UINode
-		if node.core.class == class {	// If has the class
-			node.core.visible	= true	// Shows it
+		var node = get_UINode_by_id(UI_nodes[i])	// Get on UINode
+		if node.core.class == class {				// If has the class
+			node.core.visible	= true				// Shows it
 		}
 	}
 }
@@ -756,8 +788,8 @@ function show_UINode_except(class_exc){
 	var many_node	= array_length(UI_nodes)
 	
 	for (var i = 0; i < many_node; i ++) {
-		var node = UI_nodes[i]			// struct
-		var class = node.core.class		// class of that struct
+		var node = get_UINode_by_id(UI_nodes[i])	// struct
+		var class = node.core.class					// class of that struct
 		
 		// If haven't that class, show, else hide it
 		node.core.visible = (class != class_exc)
@@ -828,10 +860,8 @@ function draw_UINode_sprite(node_or_id) {
 @desc	Destroy an UINode, except their object
 */
 function destroy_UINode(node_or_id) {
-	var node	= _UINode_resolve(node_or_id)
-	
+	var node		= _UINode_resolve(node_or_id)
 	var _children	= node.core.children		// Children array
-	var many_c		= array_length(_children)	// Amount of children
 
 	// Destroy all children with itself
 	while(array_length(_children)) {

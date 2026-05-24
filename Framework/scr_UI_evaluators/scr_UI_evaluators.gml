@@ -189,8 +189,9 @@ function _evaluate_UINode_radio_button(config) {
 	static schema 	= {}
 	if empty_struct(schema) {
 		__UI_register_props(["on_click"],	[UINodeValue.CALLABLE],	schema)
-		__UI_register_props(["group"],		[UINodeValue.STRING],	schema)
 		__UI_register_props(["value"],		[UINodeValue.BOOL],		schema)
+		
+		__UI_register_props(["group"], [UINodeValue.STRING, UINodeValue.REAL], schema)
 	}
 	__check_wrong_value(schema, config, "radio_button")
 }
@@ -299,7 +300,7 @@ function _evaluate_UINode(config) {
 		__UI_register_props(["parent"],		  [UINodeValue.NODE_REFERENCE], schema)
 		__UI_register_props(["scissor_rect"], [UINodeValue.STRUCT, UINodeValue.NODE_REFERENCE], schema)
 		
-		__UI_register_props(["name", "tag", "class"], identification, schema)
+		__UI_register_props(["name", "tag", "class", "group"], identification, schema)
 		__UI_register_props(METRIC, metrics_accept, schema)
 		__UI_register_props(ABS_AND_RELA, absolute_and_relative, schema)
 		

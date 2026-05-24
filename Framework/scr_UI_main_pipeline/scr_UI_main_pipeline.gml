@@ -1,6 +1,26 @@
 #region PURE FUNCTIONS
 /**
 @ignore
+
+@param	{Struct}	node	UINode to count relatives children
+@return	{Real}		Amount of relative children
+
+@desc	Counts how many children are relatives
+*/
+function __many_relative_children(node) {
+	var amount	= 0
+	var many_c	= array_length(node.core.children)
+	
+	for(var i = 0; i < many_c; i ++) {
+		var child	= get_UINode_by_id(node.core.children[@ i])
+		amount		+= (child.layout.position == UINodePosition.RELATIVE)
+	}
+	
+	return amount
+}
+
+/**
+@ignore
 @pure
 
 @param	{String}	coord	coordenate to return derivatives ("x" or "y")
@@ -149,24 +169,25 @@ function _adjust_cross_axis_children(cross_axis, start_pos, free_space) {
 */
 function __UINode_resolve_gap_layout(child, cursor, flex, gap, is_last_child) {
 	// Cursor update
-	if (child.layout.position == UINodePosition.RELATIVE) {
-	    switch(flex) {
-			#region FLEX DIRECTION
-			case UINodeFlexDirection.ROW:
-			case UINodeFlexDirection.ROW_REVERSE:
-				cursor += child.size.width.outer
-			break
-			case UINodeFlexDirection.COLUMN:
-			case UINodeFlexDirection.COLUMN_REVERSE:
-				cursor += child.size.height.outer
-			break
-			#endregion
-		}
-		
-		if (!is_last_child) {
-			cursor += gap
-		}
+	if (child.layout.position != UINodePosition.RELATIVE) {return cursor}
+	
+	switch(flex) {
+		#region FLEX DIRECTION
+		case UINodeFlexDirection.ROW:
+		case UINodeFlexDirection.ROW_REVERSE:
+			cursor += child.size.width.outer
+		break
+		case UINodeFlexDirection.COLUMN:
+		case UINodeFlexDirection.COLUMN_REVERSE:
+			cursor += child.size.height.outer
+		break
+		#endregion
 	}
+		
+	if (!is_last_child) {
+		cursor += gap
+	}
+	
 	return cursor
 }
 
@@ -326,7 +347,7 @@ function __UINode_layout_setup_axis(node) {
 	var flex_direction	= node.layout.flex_direction	// Flex direction (ROW, COLUMN...)
 	var main_axis		= node.layout.justify_content	// Main-axis
 	
-	var many_children	= array_length(node.core.children)	// Amount of children
+	var many_children	= __many_relative_children(node)	// Amount of children (relatives)
 	var dir		= 1											// direction (normal or reverse)
 	var f_index	= 0											// first index (first children)
 	
@@ -418,7 +439,6 @@ function __UINode_layout_setup_axis(node) {
 @param	{Real}		gap			Value between UINodes
 @param	{Real}		cursor_x	Child x
 @param	{Real}		cursor_y	Child y
-@return	{Struct}	Struct with new cursors value
 
 @desc	Resolve child layout (both absolute and relative)
 */
@@ -473,10 +493,6 @@ function __text_measure(node) {
 	
 	draw_set_font(node_f)
 	var text = ""
-	
-	if string_contains("my name:", textd.content) {
-		show_debug_message(textd.content)
-	}
 	
 	#region GET THE TEXT
 	switch(node.text.layout.draw_mode) {

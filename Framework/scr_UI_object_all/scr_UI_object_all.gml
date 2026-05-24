@@ -124,6 +124,36 @@ function _draw_preset_UI_element(node_or_id) {
 		draw_UINode_sprite(node)
 	}
 }
+
+/**
+@public
+
+@param {Any}			group	The kind of group that the radio buttons are
+@param {String, Real}	node_id	The UINode id to set on ( -1 equals noone on )
+
+*/
+function UI_radio_button_set(group, node_id) {
+	var _group_same	= UINode_get_same_group(group)	// Gets all radio in this group
+			
+	// Turns of all elements of the group
+	for(var i = 0; i < array_length(_group_same); i ++) {
+		var radio_id	= _group_same[i]				// Gets the node id
+		var radio_node	= get_UINode_by_id(radio_id)	// Gets the node
+		var last_v	= radio_node.value					// Savesthe value
+		
+		if node_id == -1 {
+			// Set to false/0
+			radio_node.value				= false
+			radio_node.assets.image_index	= 0
+		} else {
+			// Evaluate it
+			radio_node.value				= (node_id == radio_id)	// If haven't id turn it off
+			radio_node.assets.image_index	= radio_node.value		// image index equals active
+		}
+		
+		if last_v != radio_node.value {radio_node.internal.changed = true}
+	}
+}
 #endregion
 
 #region CREATORS

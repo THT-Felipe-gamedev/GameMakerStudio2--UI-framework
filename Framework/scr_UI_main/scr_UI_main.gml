@@ -258,6 +258,8 @@ function _create_textbox(config) : _create_UI_element(config) constructor {
 		text:		""
 	}
 	
+	allowed_char	= config[$ "allowed_char"] ?? -1
+	
 	focus			= false
 	textbox_type	= config[$ "textbox_type"] ?? UINodeTextboxType.LINEAR
 	

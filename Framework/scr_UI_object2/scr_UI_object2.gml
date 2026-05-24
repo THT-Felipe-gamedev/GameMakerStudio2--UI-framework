@@ -3,6 +3,27 @@
 #region Digits
 /**
 @ignore
+
+@desc Returns the allowed characters of any type
+*/
+function __get_allowed_txtb(type) {
+	switch(type) {
+		case UINodeTextboxAllow.NUMBER:
+		return "1234567890"
+
+		case UINodeTextboxAllow.FLOAT:
+		return "1234567890."
+
+		case UINodeTextboxAllow.VARIABLE:
+		return "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+
+		case UINodeTextboxAllow.ANY:
+		return -1
+	}
+}
+
+/**
+@ignore
 @self textbox_step_main
 
 @param	{Struct}	node	UINode to add/delete characters
@@ -18,6 +39,21 @@ function _textbox_keyboard_get(node) {
 
 	if !node.focus || (input.char == "" && input.key <= 0) {
 		exit
+	}
+	
+	static is_allowed = function(node, _char) {
+		if node.allowed_char == -1 return true
+		
+		if is_string(node.allowed_char) {
+			return string_contains(_char, node.allowed_char)
+		} else {
+			var allowed = __get_allowed_txtb(node.allowed_char)
+			
+			if allowed == -1 return true
+			return string_contains(_char, allowed)
+		}
+		
+		
 	}
 	
 	var last_txt	= node.text.content
@@ -46,7 +82,7 @@ function _textbox_keyboard_get(node) {
 		}
 		else {
 			// Normal text
-			if input.char != "" && input.key != vk_enter {
+			if (input.char != "" && input.key != vk_enter) && is_allowed(node, input.char) {
 				txt = string_insert(input.char, txt, pos + 1)
 			}
 		}
@@ -66,7 +102,7 @@ function _textbox_keyboard_get(node) {
 			
 			// NORMAL INPUT
 			default:
-				if input.char != "" {
+				if input.char != "" && is_allowed(node, input.char) {
 					txt = string_insert(input.char, txt, pos + 1)
 				}
 			break

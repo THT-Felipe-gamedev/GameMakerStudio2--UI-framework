@@ -248,6 +248,7 @@ function create_dropdown_options(node_or_id, options) {
 		array_push(final.parsed, UI_parse_text(dis, node.text.span, style.font, style.xscale, style.yscale))
 	}
 	
+	_mark_dirty(node, UINodeDirtyFlag.WORLD)
 	return final
 }
 
