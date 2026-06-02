@@ -156,10 +156,42 @@ function __create_padmar_UINode(simble, config) constructor {
 			left:	0,
 			right:	0
 		}
+		dirty	= {
+			top:	true,
+			bottom: true,
+			left:	true,
+			right:	true
+		}
+		
 		eval	= simble == "m" ? _UINode_margin_eval : _UINode_padding_eval
 		set		= simble == "m" ? _UINode_set_margin  : _UINode_set_padding
 }
 
+/**
+@ignore
+
+@param	{Struct}	node	UINode toget values
+@param	{Real}		flag	Which part to verify (UINodeDirtyFlag)
+@return	{Bool}	Whether the nodeis safe or not
+
+@desc	Checks if a node is safe to start calculating in that flag
+*/
+function __node_is_safe(node, flag) {
+	static safe_values = [UINodeValue.AUTO, UINodeValue.REAL]
+	
+	switch(flag) {
+		case UINodeDirtyFlag.SIZE:
+			var s = node.s
+			node.internal.is_safe[$ flag] =
+			array_contains(safe_values, s.width.type) && array_contains(safe_values, s.height.type)
+		break
+		case UINodeDirtyFlag.LAYOUT:
+			var p = node.position
+			node.internal.is_safe[$ flag] =
+			array_contains(safe_values, p.x.type) && array_contains(safe_values, p.y.type)
+		break
+	}
+}
 #endregion
 
 #region HELPERS
@@ -205,48 +237,61 @@ function _create_UI_text_layout(config) {
 @desc	Sets a new value to a UINOde margin or padding
 */
 function __MarPad_setter(node, pad_or_mar, direction, value) {
-	var place	= node.size[$ pad_or_mar].raw
+	var place = node.size[$ pad_or_mar].raw
+	var dirty = node.size[$ pad_or_mar].dirty
+
+	var faces = undefined
+
 	switch(direction) {
-		case "all":
-			place.left		= value
-			place.right		= value
-			place.top		= value
-			place.bottom	= value
+	    case "all":
+			faces = ["left", "right", "top", "bottom"]
 		break
+
 		case "x":
-			place.left		= value
-			place.right		= value
+			faces = ["left", "right"]
 		break
+
 		case "y":
-			place.top		= value
-			place.bottom	= value
+			faces = ["top", "bottom"]
 		break
-		
+
 		case "left":
 		case "right":
 		case "top":
 		case "bottom":
-			place[$ direction] = value
+			faces = [direction]
 		break
-		
+
 		default:
-		exit
+			exit
 	}
-	_mark_dirty(node, UINodeDirtyFlag.ALL)
+
+	for (var i = 0; i < array_length(faces); i++) {
+		var face = faces[@ i]
+
+		dirty[$ face] = place[$ face] != value
+		place[$ face] = value
+	}
+	_add_dirty(node, UINodeDirtyFlag.SIZE)
 }
 
 /**
 @ignore
-@param	{Struct}	node	UINode to apply and return scissor metrics
-@return	{Struct}	Returns the metrics ( x, y, w, h ) of the previous
+@param	{Struct}		node	UINode to apply and return scissor metrics
+@return	{Struct, Bool}	Returns the struct of the previous or false if doesn't need to set scissors
 @desc	Apply the UINode scissor and returns the previous scissor metric
 */
 function __UI_apply_scissor(node) {
-	var last	= gpu_get_scissor()
+	var last	= global.UI.internal.last_scissor
 	var scissor	= node.scissor.rect.inner
+	
+	if last.x == scissor.x && last.y == scissor.y 
+	&& last.w == scissor.w && last.h == scissor.h {
+		return;
+	}
+	
 	gpu_set_scissor(scissor)
-		
-	return last
+	global.UI.internal.last_scissor = scissor
 }
 #endregion
 
@@ -274,6 +319,38 @@ function _UINode_set_margin(direction, value){
 function _UINode_set_padding(direction, value){
 	__MarPad_setter(self, "padding", direction, value)
 }
+
+/**
+@ignore
+*/
+function _UINode_set_scissor(stc_or_node_ref) {
+	static order	= ["x", "y", "w", "h"]
+	static order_l	= array_length(order)
+	
+	var mark		= []
+	var _type		= UI_get_value_type(stc_or_node_ref)
+	var value		= stc_or_node_ref
+	
+	switch(_type) {
+		case UINodeValue.NODE_REFERENCE: {
+			self.scissor.rect.raw	= value
+			mark					= ["x", "y", "w", "h"]
+		}
+		case UINodeValue.STRUCT: {
+			for(var i = 0; i < order_l; i ++) {
+				var stc_val = order[@ i]
+				if value[$ stc_val] != self.scissor.rect.raw[$ stc_val] {
+					self.scissor.rect.raw[$ stc_val] = value
+					array_push(mark, stc_val)
+				}
+			}
+		}
+	}
+	
+	for(var j = 0; j < array_length(mark); j ++) {
+		self.scissor.rect.dirty[$ mark[@ j]] = true
+	}
+}
 #endregion
 
 #region EVALS
@@ -281,15 +358,44 @@ function _UINode_set_padding(direction, value){
 @ignore
 */
 function __translate_UINode_calculator(value, side, node) {
-	var type	= UI_get_value_type(value)
+	var trans	= node.offset.translate
+	var type	= -1
+	var byte	= undefined
+	var p_val	= 0
+	
+	switch(side) {
+		case UISizeAxis.WIDTH:
+			if trans.x.dirty {
+				trans.x.type		= UI_get_value_type(value)
+				trans.x.raw			= __UINode_type_corrector(value)
+				trans.x.bytecode	= string_to_rpn(value)
+				trans.x.dirty		= false
+			}
+			type	= trans.x.type
+			byte	= trans.x.bytecode
+			p_val	= trans.x.inner
+		break
+		case UISizeAxis.HEIGHT:
+			if trans.y.dirty {
+				trans.y.type		= UI_get_value_type(value)
+				trans.y.raw			= __UINode_type_corrector(value)
+				trans.y.bytecode	= string_to_rpn(value)
+				trans.y.dirty		= false
+			}
+			type	= trans.y.type
+			byte	= trans.y.bytecode
+			p_val	= trans.y.inner
+		break
+	}
+	
 	switch(type) {
-		case UINodeValue.PERCENTAGE: 
-			var rpn_per = string_to_rpn(value)
-		return _UI_rpn_reader(node, rpn_per, side)
-		
+		case UINodeValue.PERCENTAGE:
+			var dirty = global.UI.internal.dirty
+			if (!dirty.size && !dirty.layout) {
+				return p_val
+			}
 		case UINodeValue.EXPRESSION: 
-			var rpn_exp = string_to_rpn(__UINode_type_corrector(value))
-		return _UI_rpn_reader(node, rpn_exp, side)
+		return _UI_rpn_reader(node, byte, side)
 		
 		default:
 		case UINodeValue.REAL: return value
@@ -312,8 +418,8 @@ function _offset_pivot_eval() {
 	// TOP == 0; MIDDLE == half height; BOTTOM == height
 	o.pivot.y = o.y == UI_HALIGN.CENTER ? h/2 : (o.y == UI_HALIGN.RIGHT ? h : 0)
 	
-	o.translate.x.inner	= __translate_UINode_calculator(o.translate.x.raw, "width",  self)
-	o.translate.y.inner	= __translate_UINode_calculator(o.translate.y.raw, "height", self)
+	o.translate.x.inner	= __translate_UINode_calculator(o.translate.x.raw, UISizeAxis.WIDTH,  self)
+	o.translate.y.inner	= __translate_UINode_calculator(o.translate.y.raw, UISizeAxis.HEIGHT, self)
 }
 
 /**
@@ -330,15 +436,15 @@ function _UI_eval_MarPad(node, type) {
 	static _x_faces	= ["left", "right"]
 	static _y_faces	= ["top", "bottom"]
 			
-	static all_dir		= ["x", "y"]
-	static all_metrics	= ["width", "height"]
+	static all_dir		= [UIPositionAxis.X, UIPositionAxis.Y]
+	static all_metrics	= [UISizeAxis.WIDTH, UISizeAxis.HEIGHT]
 			
 	for(var i = 0; i < array_length(all_dir); i ++) {
 				
 		// Gets the direction and face type
 		var dir			= all_dir[@ i]
 		var metric		= all_metrics[@ i]
-		var _what_face	= dir == "x" ? _x_faces : _y_faces
+		var _what_face	= dir == UIPositionAxis.X ? _x_faces : _y_faces
 			
 				
 		// Runs all "_what_face"
@@ -346,13 +452,17 @@ function _UI_eval_MarPad(node, type) {
 			var _face	= _what_face[@ j]
 			var _raw_v	= _size.raw[$ _face]
 				
-			// Transforms a string operation into a rpn/bytecode
-			var _byt = string_to_rpn(_raw_v)
+			// If value changed
+			if _size.dirty[$ _face] {
+				_size.dirty[$ _face] = false
 				
-			_size.bytecode[$ _face]	= _byt		// Set bytecode
+				// Set bytecode
+				_size.bytecode[$ _face]	= string_to_rpn(_raw_v)		
+			}
+			var _byt = _size.bytecode[$ _face]
 				
 			// Set inner value reading the rpn
-			_size.inner[$ _face] = empty_array(_size.bytecode[$ _face]) ? 0 : _UI_rpn_reader(node, _byt, metric)
+			_size.inner[$ _face] = _UI_rpn_reader(node, _byt, metric)
 		}
 	}
 }
@@ -379,7 +489,13 @@ function _UINode_margin_eval() {
 @desc	Evaluates a UINode scroll's struct
 */
 function UI_eval_scroll(node) {
+	
 	var scroll = node.scroll
+	
+	// EARLY RETURN
+	if (!node.scroll.enabled.x && !node.scroll.enabled.y) && node.element != UINodeType.TEXTBOX {
+		return
+	}
 	
 	var content_w	= 0
 	var content_h	= 0
@@ -407,37 +523,45 @@ function UI_eval_scroll(node) {
 @desc	Evaluates a UINode scissor's struct
 */
 function _UI_eval_scissor(node) {
-	var _sci	= node.scissor
-	var rect	= _sci.rect
-			
-	static _all_dir		= ["x", "y", "w", "h"]
-	static _all_metrics	= ["x", "y", "width", "height"]
+	var glb_dirty	= global.UI.internal.dirty
+	var _sci		= node.scissor
+	var rect		= _sci.rect
 	
 	switch(rect.type) {
 		case UINodeValue.NODE_REFERENCE:
-			var p = get_UINode_by_id(rect.raw)
-		
-			rect.bytecode.x	= [RPN_pushNumber(p.position.x.final + p.size.padding.inner.left)]
-			rect.bytecode.y	= [RPN_pushNumber(p.position.y.final + p.size.padding.inner.top)]
-			rect.bytecode.w	= [RPN_pushNumber(p.size.width.inner)]
-			rect.bytecode.h	= [RPN_pushNumber(p.size.height.inner)]
+			var n = get_UINode_by_id(rect.raw)
+			
+			var x1 = n.position.x.final + n.size.padding.inner.left
+			var y1 = n.position.y.final + n.size.padding.inner.top
+			var w1 = n.size.width.inner
+			var h1 = n.size.height.inner
+			
+			if x1 != rect.inner.x {rect.bytecode.x	= [RPN_pushNumber(x1)]}
+			if y1 != rect.inner.y {rect.bytecode.y	= [RPN_pushNumber(y1)]}
+			if w1 != rect.inner.w {rect.bytecode.w	= [RPN_pushNumber(w1)]}
+			if h1 != rect.inner.h {rect.bytecode.h	= [RPN_pushNumber(h1)]}
 		break
 		
 		case UINodeValue.STRUCT:
-			rect.bytecode.x	= string_to_rpn(rect.raw.x)
-			rect.bytecode.y	= string_to_rpn(rect.raw.y)
-			rect.bytecode.w	= string_to_rpn(rect.raw.w)
-			rect.bytecode.h	= string_to_rpn(rect.raw.h)
+			if rect.dirty.x {rect.bytecode.x = string_to_rpn(rect.raw.x)}
+			if rect.dirty.y {rect.bytecode.y = string_to_rpn(rect.raw.y)}
+			if rect.dirty.w {rect.bytecode.w = string_to_rpn(rect.raw.w)}
+			if rect.dirty.h {rect.bytecode.h = string_to_rpn(rect.raw.h)}
 		break
 	}
 	
-	for(var i = 0; i < array_length(_all_dir); i ++) {
-		// Gets the direction and face type
-		var dir			= _all_dir[@ i]
-		var value_type	= _all_metrics[@ i]
-		
-		rect.inner[$ dir] = _UI_rpn_reader(node, rect.bytecode[$ dir], value_type)	// Set inner
+	// CALCULATES EVERY PART
+	if glb_dirty.layout || glb_dirty.size {
+		rect.inner.x = _UI_rpn_reader(node, rect.bytecode.x, UIPositionAxis.X)
+		rect.inner.y = _UI_rpn_reader(node, rect.bytecode.y, UIPositionAxis.Y)
+		rect.inner.w = _UI_rpn_reader(node, rect.bytecode.w, UISizeAxis.WIDTH)
+		rect.inner.h = _UI_rpn_reader(node, rect.bytecode.h, UISizeAxis.HEIGHT)
 	}
+
+	rect.dirty.x = false
+	rect.dirty.y = false
+	rect.dirty.w = false
+	rect.dirty.h = false
 }
 #endregion
 
@@ -462,19 +586,9 @@ function __UI_create_core(config) constructor {
     color	= config[$ "color"] ?? c_white
     alpha	= config[$ "alpha"] ?? 1
 	
-	hovered		= false
 	interactive	= config[$ "interactive"]	?? true
-	
 	children	= []
     visible		= config[$ "visible"]	?? true
-	
-	dirty	= {}
-	dirty[$ UINodeDirtyFlag.LAYOUT]	= true
-	dirty[$ UINodeDirtyFlag.SIZE]	= true
-	dirty[$ UINodeDirtyFlag.WORLD]	= true
-	dirty[$ UINodeDirtyFlag.TEXT]	= true
-	
-	dirty[$ UINodeDirtyFlag.GEN_FUNCTION]	= true
 }
 
 /**
@@ -507,10 +621,11 @@ function __UI_create_position(config) constructor {
 		
 		set:	function(_nraw) {
 			if self.position.x.raw == _nraw {exit}
+			self.position.x.type		= UI_get_value_type(_nraw)
+			self.position.x.raw			= __UINode_type_corrector(_nraw)
 			
-			_mark_dirty(self, UINodeDirtyFlag.LAYOUT)
-			self.position.x.type	= UI_get_value_type(_nraw)
-			self.position.x.raw		= __UINode_type_corrector(_nraw)
+			__node_is_safe(self, UINodeDirtyFlag.LAYOUT) 
+			_add_dirty(self, UINodeDirtyFlag.LAYOUT)
 		}
 	}
 	
@@ -526,10 +641,11 @@ function __UI_create_position(config) constructor {
 		
 		set:	function(_nraw) {
 			if self.position.y.raw != _nraw {exit}
+			self.position.y.type		= UI_get_value_type(_nraw)
+			self.position.y.raw			= __UINode_type_corrector(_nraw)
 			
-			_mark_dirty(self, UINodeDirtyFlag.LAYOUT)
-			self.position.y.type	= UI_get_value_type(_nraw)
-			self.position.y.raw		= __UINode_type_corrector(_nraw)
+			__node_is_safe(self, UINodeDirtyFlag.LAYOUT) 
+			_add_dirty(self, UINodeDirtyFlag.LAYOUT)
 		}
 	}
 	
@@ -558,12 +674,12 @@ function __UI_create_sizes(config) constructor {
 		outer:		0,
 
 		set:	function(_raw) {
-			if self.size.width.raw != _raw {
-				_mark_dirty(self, UINodeDirtyFlag.SIZE)
-				
-				self.size.width.type	= UI_get_value_type(_raw)
-				self.size.width.raw		= __UINode_type_corrector(_raw)
-			}
+			if self.size.width.raw = _raw {return}
+			self.size.width.type	= UI_get_value_type(_raw)
+			self.size.width.raw		= __UINode_type_corrector(_raw)
+			
+			__node_is_safe(self, UINodeDirtyFlag.SIZE)
+			_add_dirty(self, UINodeDirtyFlag.SIZE)
 		}
 	}
 	
@@ -577,13 +693,12 @@ function __UI_create_sizes(config) constructor {
 		outer:		0,
 
 		set:	function(_raw) {
-			if self.size.height.raw != _raw {
-				_mark_dirty(self, UINodeDirtyFlag.SIZE)
-				
-				self.size.height.type	= UI_get_value_type(_raw)
-				self.size.height.raw	= __UINode_type_corrector(_raw)
-			}
+			if self.size.height.raw == _raw {return}
+			self.size.height.type	= UI_get_value_type(_raw)
+			self.size.height.raw	= __UINode_type_corrector(_raw)
 			
+			__node_is_safe(self, UINodeDirtyFlag.SIZE)
+			_add_dirty(self, UINodeDirtyFlag.SIZE)
 		}
 	}
 	
@@ -615,8 +730,8 @@ function __UI_create_offset(config) constructor {
 	}
 	
 	translate = {
-		x: {raw: config[$ "translate_x"] ?? 0, inner: 0},
-		y: {raw: config[$ "translate_y"] ?? 0, inner: 0}
+		x: {raw: config[$ "translate_x"] ?? 0, bytecode: [], inner: 0, dirty: true, type: -1},
+		y: {raw: config[$ "translate_y"] ?? 0, bytecode: [], inner: 0, dirty: true, type: -1}
 	}
 	
 	pivot_eval	= _offset_pivot_eval
@@ -643,17 +758,22 @@ function __UI_create_text_data(config) constructor {
 	}
 	
 	set_content	= function(_new_content) {
+		if self.text.content == _new_content {return}
+		
+		_add_dirty(self, UINodeDirtyFlag.SIZE)
 		self.text.content	= _new_content
-		_mark_dirty(self, UINodeDirtyFlag.TEXT)
 		
 		if self.element == UINodeType.LABEL {
 			self.internal.changed = true
 		}
+		
+		__eval_update_UINode(self, UINodeDirtyFlag.SIZE)
 	}
 	
 	set_span	= function(new_span) {
 		self.text.span	= new_span
-		_mark_dirty(self, UINodeDirtyFlag.TEXT)
+		_add_dirty(self, UINodeDirtyFlag.SIZE)
+		__eval_update_UINode(self, UINodeDirtyFlag.SIZE)
 	}
 	
 	eval_wrap = function(node) {
@@ -688,23 +808,25 @@ function __UI_create_text_data(config) constructor {
 @desc	Creates the size struct with: enabled and rect
 */
 function __UI_create_scissor(config) constructor {
+	static _create_def_stc = function(def_val) constructor {
+		x	= def_val
+		y	= def_val
+		w	= def_val
+		h	= def_val
+	}
+	
 	enabled	=	config[$ "enable_scissor"] ?? false
 	rect	=	{
-		raw:		config[$ "scissor_rect"]	?? {x: 0, y: 0, w: GUI_width(), h: GUI_height()},
-		bytecode:	{x: [], y: [], w: [], h: []},
-		inner:		{x: 0, y: 0, w: 0, h: 0},
-		type:		0
-	}
-	
-	set_rect = function (_rect) {
-		self.scissor.rect.raw	= _rect
-		self.scissor.rect.type	= UI_get_value_type(_rect)
+		raw:		config[$ "scissor_rect"] ?? {x: 0, y: 0, w: GUI_width(), h: GUI_height()},
+		bytecode:	new _create_def_stc([]),
+		inner:		new _create_def_stc(0),
+		dirty:		new _create_def_stc(true),
 		
-		_mark_dirty(self, UINodeDirtyFlag.WORLD)
+		type:		-1
 	}
-	
-	eval	= _UI_eval_scissor
-	apply	= __UI_apply_scissor
+	set_rect	= _UINode_set_scissor
+	eval		= _UI_eval_scissor
+	apply		= __UI_apply_scissor
 	
 	rect.type = UI_get_value_type(rect.raw)
 }
@@ -821,7 +943,7 @@ function __UI_create_events(config) constructor {
 		
 		if array_contains(all_ev, event) {
 			events[$ event]	= func
-			_mark_dirty(self, UINodeDirtyFlag.GEN_FUNCTION)
+			_add_dirty(self, UINodeDirtyFlag.GEN_FUNCTION)
 		}
 	}
 }
@@ -853,7 +975,6 @@ function _create_UI_element(config) constructor {
 	
 	internal	= {
 		allowed_children:	false,
-		prev_hovered:		false,
 		changed:			false,
 		
 		has: {
@@ -868,6 +989,15 @@ function _create_UI_element(config) constructor {
 			on_submit:	false,
 		},
 		
+		is_safe: {},
+		
+		out_of_bound: {
+			x:		false,
+			y:		false,
+			both:	false,
+			any:	false
+		},
+
 		inner_render: {
 			x: 0,
 			y: 0,
@@ -875,4 +1005,6 @@ function _create_UI_element(config) constructor {
 			height:	0
 		}
 	}
+	internal.is_safe[$ UINodeDirtyFlag.SIZE]	= false
+	internal.is_safe[$ UINodeDirtyFlag.LAYOUT]	= false
 }

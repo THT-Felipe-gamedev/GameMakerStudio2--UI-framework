@@ -66,15 +66,19 @@ global.UI = {
 	input: _inputs,
 	
 	internal: {
+		lookup_asset:	ds_map_create(),
 		lookup_map:		ds_map_create(),
+		lookup_dirty:	ds_map_create(),
+		
 		prev_hover:		undefined,
 		prev_focus:		undefined,
 		dirty: {
 			layout:	true,
 			size:	true,
-			text:	true,
-			world:	true
-		}
+			world:	true,
+			any:	true
+		},
+		last_scissor: gpu_get_scissor()
 	},
 	
 	focus:	undefined,
@@ -87,16 +91,16 @@ global.UI = {
 
 global.UI.screen.core.dirty[$ UINodeDirtyFlag.LAYOUT]	= true
 
-var _Lay_const = function () constructor {
+var _lay_const = function () constructor {
 	default_group	= {priority: 0, nodes: [], z_counter: 0, dirty: true}
 	groups			= [default_group]
 	dirty			= true
 }
 
-global.UI.layers[$ UILayer.BACKGROUND]	= new _Lay_const()
-global.UI.layers[$ UILayer.NORMAL]		= new _Lay_const()
-global.UI.layers[$ UILayer.FOREGROUND]	= new _Lay_const()
-global.UI.layers[$ UILayer.OVERLAY]		= new _Lay_const()
+global.UI.layers[$ UILayer.BACKGROUND]	= new _lay_const()
+global.UI.layers[$ UILayer.NORMAL]		= new _lay_const()
+global.UI.layers[$ UILayer.FOREGROUND]	= new _lay_const()
+global.UI.layers[$ UILayer.OVERLAY]		= new _lay_const()
 
 #region UPDATORS
 /**
@@ -179,7 +183,7 @@ function _create_label(config) : _create_UI_element(config) constructor {
 @desc	Creates a checkbox UINode struct
 */
 function _create_checkbox(config) : _create_UI_element(config) constructor {
-	value	= config[$ "value"]	?? false
+	value	= config[$ "active"]	?? false
 }
 #endregion
 
@@ -190,8 +194,8 @@ function _create_checkbox(config) : _create_UI_element(config) constructor {
 @desc	Creates a radio button UINode struct
 */
 function _create_radio_button(config) : _create_UI_element(config) constructor {
-	group		= config[$ "group"]	?? "default"
-	value		= config[$ "value"]	?? false
+	group		= config[$ "group"]		?? "default"
+	value		= config[$ "active"]	?? false
 
     draw_spr	= 1
 }
@@ -258,9 +262,8 @@ function _create_textbox(config) : _create_UI_element(config) constructor {
 		text:		""
 	}
 	
-	allowed_char	= config[$ "allowed_char"] ?? -1
-	
 	focus			= false
+	allowed_char	= config[$ "allowed_char"] ?? -1
 	textbox_type	= config[$ "textbox_type"] ?? UINodeTextboxType.LINEAR
 	
 	if is_undefined(config[$ "draw_mode"]) {
@@ -294,6 +297,8 @@ function _create_textbox(config) : _create_UI_element(config) constructor {
 @desc	Creates a functional UINode ( Panels, Buttons, Labels, sliders, ... ), and returns it structure back
 */
 function UINode_create(type, config) {
+	static SAFE_VALUES	= [UINodeValue.REAL, UINodeValue.AUTO]
+	
 	var node = {}
 	_evaluate_UINode_element(config, type)
 	
@@ -350,7 +355,7 @@ function UINode_create(type, config) {
 	#region PUSHES AND ADDS
 	// Pushes to the parent list
 	if parent.internal.allowed_children {
-		UINode_add_children(parent, node_id)
+		array_push(parent.core.children, node_id)
 	}
 	
 	// Pushes it to the UI layer
@@ -360,7 +365,14 @@ function UINode_create(type, config) {
 	ds_map_add(UI.internal.lookup_map, node_id, node)	// Pushes to the internal look out
 	#endregion
 	
-	_mark_dirty(node, UINodeDirtyFlag.ALL)
+	node.internal.is_safe[$ UINodeDirtyFlag.SIZE] = array_contains(SAFE_VALUES, node.size.width.type) &&
+	array_contains(SAFE_VALUES, node.size.height.type)
+	
+	node.internal.is_safe[$ UINodeDirtyFlag.LAYOUT] = array_contains(SAFE_VALUES, node.position.x.type) && 
+	array_contains(SAFE_VALUES, node.position.y.type) && node.layout.position != UINodePosition.RELATIVE
+	
+	_add_dirty(node, UINodeDirtyFlag.SIZE)
+	_add_dirty(node, UINodeDirtyFlag.GEN_FUNCTION)
 	
 	return node
 }

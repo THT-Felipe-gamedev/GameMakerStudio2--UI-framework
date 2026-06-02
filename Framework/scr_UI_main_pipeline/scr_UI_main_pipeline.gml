@@ -27,12 +27,12 @@ function __many_relative_children(node) {
 @return	{Struct}	Struct with all names of things in that axis
 */
 function _sizes_get_directions(_coord) {
-	static x_names	= {metric: "width", dir1: "left", dir2: "right", coord: "x"}
-	static y_names	= {metric: "height", dir1: "top", dir2: "bottom", coord: "y"}
+	static x_names	= {metric: UISizeAxis.WIDTH,  dir1: "left", dir2: "right", coord: UIPositionAxis.X}
+	static y_names	= {metric: UISizeAxis.HEIGHT, dir1: "top", dir2: "bottom", coord: UIPositionAxis.Y}
 	
 	switch(_coord) {
-		case UICoord.X: return x_names
-		case UICoord.Y: return y_names
+		case UIPositionAxis.X: return x_names
+		case UIPositionAxis.Y: return y_names
 	}
 	return undefined
 }
@@ -41,33 +41,48 @@ function _sizes_get_directions(_coord) {
 @ignore
 @pure
 
-@param	{Struct}			node UINode struct to use as reference
-@param	{Array<Function>}	rpn RPN array to calculate
-@param	{String}			inner_value Name of the parent inner value to use
+@param	{Struct}			node		UINode struct to use as reference
+@param	{Array<Function>}	rpn			RPN array to calculate
+@param	{Real}				inner_value Enum (UIPositionAxis or UISizeAxis)
 @desc	Reads a RPN specific for an UINode
 */
 /*
 @see string_to_rpn
 */
-function _UI_rpn_reader(node, rpn, inner_value) {
+function _UI_rpn_reader(node, rpn, value_type) {
+	var length	= array_length(rpn)	// RPN length
+	if length <= 0 {return 0}		// Early return
+	
+	// Node's parent struct
+	var pare_val	= 0
+	var pare_id		= node.core.parent
+	var flag_p		= false
+	var parent		= undefined
+	
 	// Create the ds stack
 	var stack	= ds_stack_create()		// ds_stack were the values will be
-	var length	= array_length(rpn)		// RPN length
 	
 	// Runs for the rpn
 	for (var i = 0; i < length; i ++) { // Runs for all rpn numbers/simbles
 		var rpn_part = rpn[@ i]
 		
-		if variable_struct_exists(rpn_part, "op") && rpn_part.op == UIOperator.PERCENTAGE {
-			// parent stucture (id or root)
-			var fat_id	= node.core.parent
-			
-			var parent		= get_UINode_by_id(fat_id)			// Parent node
-			var perc		= ds_stack_pop(stack)				// Percentage value
-			var pare_val	= parent.size[$ inner_value].inner	// Gets the parent inner value
+		if rpn_part.op == UIOperator.PERCENTAGE {
+			if !flag_p {
+				flag_p	= true
+				parent	= get_UINode_by_id(pare_id)
+				
+				// Parent value
+				switch(value_type) {
+					case UIPositionAxis.X:	pare_val = parent.position.x.inner	break
+					case UIPositionAxis.Y:	pare_val = parent.position.y.inner	break
+				
+					case UISizeAxis.WIDTH:	pare_val = parent.size.width.inner	break
+					case UISizeAxis.HEIGHT:	pare_val = parent.size.height.inner	break
+				}
+			}
 			
 			// Gets the value and pushes it into the stack
-			var value	= (perc * 0.01) * pare_val
+			var value	= ds_stack_pop(stack) * pare_val * 0.01
 			ds_stack_push(stack, value)
 			continue
 		}
@@ -193,6 +208,35 @@ function __UINode_resolve_gap_layout(child, cursor, flex, gap, is_last_child) {
 
 #region DIRTY FLAGS
 /**
+@pure
+@self _add_dirty
+
+@param	{struct}	node	UINode to start seaking
+@param	{Real}		flag	The flag (UINodeDirtyFlag) to seak
+
+@desc	Search a safe parent to start an update based on the flag
+*/
+function __parent_in_dirty(node, flag) {
+	if node.core.id == UI_ROOT_ID {return false}
+	var UI		= global.UI
+	var int		= global.UI.internal
+	var p_id	= node.core.id
+
+	do {
+		p_id = get_UINode_by_id(p_id).core.parent
+		if ds_map_exists(int.lookup_dirty, p_id) {
+			var index	= int.lookup_dirty[? p_id]
+			var dirty_p	= UI.dirty_nodes[@ index]
+			
+			if dirty_p.deprecated {continue}
+			if dirty_p.importance >= flag {return true}
+		}
+	} until (p_id == UI_ROOT_ID)
+	
+	return false
+}
+
+/**
 @ignore
 @self global
 
@@ -203,57 +247,45 @@ function __UINode_resolve_gap_layout(child, cursor, flex, gap, is_last_child) {
 */
 function _mark_dirty(_node, type) {
 	var dirty	= global.UI.internal.dirty
-	var n_dirty	= _node.core.dirty
+	var safe	= undefined
 	
 	switch(type) {
-		case UINodeDirtyFlag.ALL:
 		case UINodeDirtyFlag.SIZE:
-		case UINodeDirtyFlag.TEXT:
-			dirty.size		= true
-			dirty.layout	= true
-			dirty.world		= true
-			dirty.text		= true
-			
-			n_dirty.size	= true
-			n_dirty.layout	= true
-			n_dirty.world	= true
-			n_dirty.text	= true
-		break
-		
+			_register_dirty_flag(_node, UINodeDirtyFlag.SIZE)
+			dirty.size	= true
+
 		case UINodeDirtyFlag.LAYOUT:
-			dirty.layout = true
-			dirty.world  = true
+			_register_dirty_flag(_node, UINodeDirtyFlag.LAYOUT)
+			dirty.layout	= true
 			
-			n_dirty.layout = true
-			n_dirty.world  = true
-		break
-		
 		case UINodeDirtyFlag.WORLD:
-			dirty.world		= true
+			_register_dirty_flag(_node, UINodeDirtyFlag.WORLD)
+			dirty.world	= true
+		break
 			
-			n_dirty.world	= true
+		case UINodeDirtyFlag.GEN_FUNCTION:
+			_register_dirty_flag(_node, UINodeDirtyFlag.GEN_FUNCTION)
 		break
 	}
+	dirty.any	= true
 }
 
 /**
 @ignore
 @self global
 
-@param	{Struct}	node	UINode to clean flags
+@param	{Struct}	node	The UINode to declare dirty
+@param	{Real}		flag	Type of value to update
 
-@desc	It cleans all the drity flags of an UINode
+@desc	Declares the UINode dirty
 */
-function _clean_dirty_flags(node) {
-
-	node.core.dirty[$ UINodeDirtyFlag.LAYOUT]	= false
-	node.core.dirty[$ UINodeDirtyFlag.SIZE]		= false
-	node.core.dirty[$ UINodeDirtyFlag.TEXT]		= false
-	node.core.dirty[$ UINodeDirtyFlag.ALL]		= false
+function _add_dirty(node, flag) {
+	__eval_update_UINode(node, flag)
+	if flag == UINodeDirtyFlag.GEN_FUNCTION {return}
+	if __parent_in_dirty(node, flag) {return}
 	
-	node.core.dirty[$ UINodeDirtyFlag.WORLD]		= false
-	node.core.dirty[$ UINodeDirtyFlag.GEN_FUNCTION]	= false
-
+	_mark_dirty(node, flag)
+	__dirty_deprecated_resolver(node, flag)
 }
 #endregion
 
@@ -475,6 +507,47 @@ function __UINode_layout_child_resolve(node, child, cursor_x, cursor_y) {
 		break
 	}
 }
+
+/**
+@ignore
+
+@desc	Separates the nodes in dirty nodes by their needs
+*/
+function __parse_dirty_nodes() {
+	var siz_arr	= []
+	var lay_arr	= []
+	var wor_arr	= []
+	var drw_arr = []
+	var dirty	= global.UI.dirty_nodes
+	
+	while(!empty_array(dirty)) {
+		var dirty_stc	= array_pop(dirty)
+		var node_id		= dirty_stc.node
+		
+		// Ignores the deprecated one
+		if dirty_stc.deprecated {continue}
+		
+		if dirty_stc.metrics[$ UINodeDirtyFlag.SIZE] {
+			array_push(siz_arr, node_id)
+			array_push(drw_arr, node_id)	// They update with the size update
+		}
+		
+		if dirty_stc.metrics[$ UINodeDirtyFlag.LAYOUT] {
+			array_push(lay_arr, node_id)
+		}
+		
+		if dirty_stc.metrics[$ UINodeDirtyFlag.WORLD] {
+			array_push(wor_arr, node_id)
+		}
+	}
+	
+	return {
+		size:	siz_arr,
+		layout:	lay_arr,
+		world:	wor_arr,
+		draw:	drw_arr
+	}
+}
 #endregion
 
 #region NODE CALCULATORS
@@ -572,8 +645,8 @@ function __UINode_position_absolute_resolve(node) {
 	p.y.bytecode	= string_to_rpn(p.y.raw)
 	
 	#region POSITION
-	p.x.inner = _UI_rpn_reader(node, p.x.bytecode, "width") + f.position.x.outer
-	p.y.inner = _UI_rpn_reader(node, p.y.bytecode, "height") + f.position.y.outer
+	p.x.inner = _UI_rpn_reader(node, p.x.bytecode, UISizeAxis.WIDTH)  + f.position.x.outer
+	p.y.inner = _UI_rpn_reader(node, p.y.bytecode, UISizeAxis.HEIGHT) + f.position.y.outer
 	
 	p.x.outer = p.x.inner + s.margin.inner.left	+ s.margin.inner.left
 	p.y.outer = p.y.inner + s.margin.inner.top	+ s.margin.inner.top
@@ -591,14 +664,33 @@ function __UINode_position_absolute_resolve(node) {
 @desc	Measures the size inner and resolved values (only for absolute and AUTO types)
 */
 function __generic_measure_size(node, coordinate) {
-	var flow	= _sizes_get_directions(coordinate)
-	
-	var measure	= node.size[$ flow.metric]
 	var mar		= node.size.margin.inner
 	var pad		= node.size.padding.inner
+	var is_x	= coordinate == UIPositionAxis.X
 	
-	var min_s = node.size[$ $"min_{flow.metric}"]
-	var max_s = node.size[$ $"max_{flow.metric}"]
+	var pad1, pad2, mar1, mar2, txt_s, min_s, max_s, measure;
+	
+	if is_x {
+		measure	= node.size.width
+		min_s	= node.size.min_width
+		max_s	= node.size.max_width
+		txt_s	= node.text.size.width
+		
+		pad1	= pad.left
+		pad2	= pad.right
+		mar1	= mar.left
+		mar2	= mar.right
+	} else {
+		measure	= node.size.height
+		min_s	= node.size.min_height
+		max_s	= node.size.max_height
+		txt_s	= node.text.size.height
+		
+		pad1	= pad.top
+		pad2	= pad.bottom
+		mar1	= mar.top
+		mar2	= mar.bottom
+	}
 	
 	var value	= measure.raw
 	var type	= measure.type
@@ -609,12 +701,12 @@ function __generic_measure_size(node, coordinate) {
 			measure.inner		= value
 		break
 		case UINodeValue.AUTO:
-			if coordinate == UICoord.X {
+			if is_x {
 				measure.inner = _sum_children_width(node, node.layout.gap_x, node.layout.flex_direction)
 			} else {
 				measure.inner = _sum_children_height(node, node.layout.gap_y, node.layout.flex_direction)
 			}
-			measure.inner = max(measure.inner, node.text.size[$ flow.metric])
+			measure.inner = max(measure.inner, txt_s)
 		break
 		
 		default: break
@@ -622,8 +714,8 @@ function __generic_measure_size(node, coordinate) {
 	
 	measure.inner = max_s >= 0 ? max(min_s, min(measure.inner, max_s)) : max(min_s, measure.inner, 0)
 	
-	measure.resolved	= measure.inner    + pad[$ flow.dir1] + pad[$ flow.dir2]
-	measure.outer		= measure.resolved + mar[$ flow.dir1] + mar[$ flow.dir2]
+	measure.resolved	= measure.inner    + pad1 + pad2
+	measure.outer		= measure.resolved + mar1 + mar2
 }
 
 /**
@@ -635,14 +727,33 @@ function __generic_measure_size(node, coordinate) {
 @desc	Resolves the size inner, resolved and outer values
 */
 function __generic_resolve_size(node, coordinate) {
-	var flow	= _sizes_get_directions(coordinate)
-	
-	var resolve	= node.size[$ flow.metric]
 	var mar		= node.size.margin.inner
 	var pad		= node.size.padding.inner
+	var is_x	= coordinate == UIPositionAxis.X
 	
-	var min_s = node.size[$ $"min_{flow.metric}"]
-	var max_s = node.size[$ $"max_{flow.metric}"]
+	var pad1, pad2, mar1, mar2, min_s, max_s, s_axis, resolve;
+	
+	if is_x {
+		resolve	= node.size.width
+		min_s	= node.size.min_width
+		max_s	= node.size.max_width
+		s_axis	= UISizeAxis.WIDTH
+		
+		pad1	= pad.left
+		pad2	= pad.right
+		mar1	= mar.left
+		mar2	= mar.right
+	} else {
+		resolve	= node.size.height
+		min_s	= node.size.min_height
+		max_s	= node.size.max_height
+		s_axis	= UISizeAxis.HEIGHT
+		
+		pad1	= pad.top
+		pad2	= pad.bottom
+		mar1	= mar.top
+		mar2	= mar.bottom
+	}
 	
 	var value	= resolve.raw
 	var type	= resolve.type
@@ -650,8 +761,9 @@ function __generic_resolve_size(node, coordinate) {
 		
 		case UINodeValue.EXPRESSION:
 		case UINodeValue.PERCENTAGE:
+			
 			resolve.bytecode	= string_to_rpn(value)
-			resolve.inner		= _UI_rpn_reader(node, resolve.bytecode, flow.metric)
+			resolve.inner		= _UI_rpn_reader(node, resolve.bytecode, s_axis)
 		break
 		
 		default: break
@@ -659,8 +771,8 @@ function __generic_resolve_size(node, coordinate) {
 	
 	resolve.inner = max_s >= 0 ? max(min_s, min(resolve.inner, max_s)) : max(resolve.inner, min_s, 0)
 	
-	resolve.resolved	= resolve.inner    + pad[$ flow.dir1] + pad[$ flow.dir2]
-	resolve.outer		= resolve.resolved + mar[$ flow.dir1] + mar[$ flow.dir2]
+	resolve.resolved	= resolve.inner    + pad1 + pad2
+	resolve.outer		= resolve.resolved + mar1 + mar2
 }
 /**
 @ignore
@@ -768,8 +880,45 @@ function __UINode_world_resolve(node) {
 	int.inner_render.height	= s.height.inner
 	#endregion
 	
+	_out_of_bound_eval(node)
 	// Update node specific aspects (like slider/dropdown variables)
 	__UINode_update_aspects(node)
+}
+#endregion
+
+#region DIRTY
+/**
+@ignore
+
+@param	{Struct}	node	UInode to start deprecate useless dirty
+@param	{Real}		flag	The flag (UINodeDirtyNode) to check
+
+@desc	Marks obsoletes dirty nodes structs as deprecated, ignoring them
+*/
+function __dirty_deprecated_resolver(node, flag) {
+	var UI	= global.UI
+	var int	= global.UI.internal
+	
+	var l = array_length(node.core.children)
+	for(var i = 0; i < l; i ++) {
+		var child_id	= node.core.children[@ i]
+		
+		// If find some child in dirty node, check it
+		if ds_map_exists(int.lookup_dirty, child_id) {
+			var index	= int.lookup_dirty[? child_id]
+			var dirty_c	= UI.dirty_nodes[@ index]
+			
+			if flag >= dirty_c.importance {
+				dirty_c.deprecated = true	// Is useless
+			} else {
+				for(var j = flag; j >= 0; j --) {
+					dirty_c[$ j] = false	// Isn't useless
+				}
+			}
+		}
+		// Call itself in children
+		__dirty_deprecated_resolver(get_UINode_by_id(child_id), flag)
+	}
 }
 #endregion
 
@@ -779,14 +928,16 @@ function __UINode_world_resolve(node) {
 @desc	Evaluates the values of a UINode. If there are a wrong value, shows an error message,
 		and then ends the game
 */
-function __eval_update_UINode(node) {
-	var dirty	= node.core.dirty	// Dirty struct
+function __eval_update_UINode(node, flag) {
 	var inter	= node.internal
 	
-	if dirty[$ UINodeDirtyFlag.SIZE]	{_evaluate_UINode_size(node)}
-	if dirty[$ UINodeDirtyFlag.LAYOUT]	{_evaluate_UINode_layout(node)}
+	if flag == UINodeDirtyFlag.SIZE	{
+		_evaluate_UINode_text(node)
+		_evaluate_UINode_size(node)
+	}
+	if flag == UINodeDirtyFlag.LAYOUT	{_evaluate_UINode_layout(node)}
 	
-	if dirty[$ UINodeDirtyFlag.GEN_FUNCTION] {
+	if flag == UINodeDirtyFlag.GEN_FUNCTION {
 		_evaluate_UINode_gen_func(node)
 		#region UPDATE HAS GENERIC FUNCTIONS
 		inter.has.can_click	= is_callable(node.events.can_click)
@@ -800,9 +951,7 @@ function __eval_update_UINode(node) {
 		inter.has.on_submit	= is_callable(node.events.on_submit)
 		#endregion
 	}
-	
-	if dirty[$ UINodeDirtyFlag.TEXT]  {_evaluate_UINode_text(node)}
-	if dirty[$ UINodeDirtyFlag.WORLD] {_evaluate_UINode_world(node)}
+	if flag == UINodeDirtyFlag.WORLD {_evaluate_UINode_world(node)}
 }
 
 /**
@@ -818,11 +967,14 @@ function _UINode_update_draw(node) {
 
 /**
 @ignore
+@deprecated
 @param	{Struct}	node	UINode to update
 @desc	Update any normal thing that needs, like scroll
 */
 function _step_normal_update(node) {
-	node.scroll.update(node)
+	if node.scroll.enabled.x || node.scroll.enabled.y {
+		node.scroll.update(node)
+	}
 }
 #endregion
 
@@ -842,9 +994,9 @@ function __UINode_measure_width(node) {
 	// In auto it first get the metrics and then calculates the size
 	if node.size.width.type == UINodeValue.AUTO {
 		__text_measure(node)
-		__generic_measure_size(node, UICoord.X)
+		__generic_measure_size(node, UIPositionAxis.X)
 	} else {	
-		__generic_measure_size(node, UICoord.X)
+		__generic_measure_size(node, UIPositionAxis.X)
 		__text_measure(node)
 	}
 }
@@ -859,7 +1011,7 @@ function __UINode_resolve_width(node) {
 	node.size.margin.eval()
 	node.size.padding.eval()
 	
-	__generic_resolve_size(node, UICoord.X)
+	__generic_resolve_size(node, UIPositionAxis.X)
 	__text_measure(node)
 
 }
@@ -877,9 +1029,9 @@ function __UINode_measure_height(node) {
 	// In auto it first get the metrics and then calculates the size
 	if node.size.height.type == UINodeValue.AUTO {
 		__text_measure(node)
-		__generic_measure_size(node, UICoord.Y)
+		__generic_measure_size(node, UIPositionAxis.Y)
 	} else {	
-		__generic_measure_size(node, UICoord.Y)
+		__generic_measure_size(node, UIPositionAxis.Y)
 		__text_measure(node)
 	}
 }
@@ -894,7 +1046,7 @@ function __UINode_resolve_height(node) {
 	node.size.margin.eval()
 	node.size.padding.eval()
 	
-	__generic_resolve_size(node, UICoord.Y)
+	__generic_resolve_size(node, UIPositionAxis.Y)
 	__text_measure(node)
 	
 	// At last, evaluates the pivots
@@ -905,7 +1057,7 @@ function __UINode_resolve_height(node) {
 @ignore
 
 @param	{Struct}	node	UINode to measure and call children
-@param	{Real}		coord	Coordinate ("UICoord" ENUM) to check
+@param	{Real}		coord	Coordinate ("UIPositionAxis" ENUM) to check
 
 @desc	Measures a size of an UINode and then call itself on the children
 */
@@ -935,13 +1087,15 @@ function __UI_sizes_measure_helper(node, coord) {
 @ignore
 
 @param	{Struct}	node	UINode to resolve and call children
-@param	{Real}		coord	Coordinate ("UICoord" ENUM) to check
+@param	{Real}		coord	Coordinate ("UIPositionAxis" ENUM) to check
 
 @desc	resolves a size of an UINode and then call itself on the children
 */
 function __UI_sizes_resolve_helper(node, coord) {
 	var children		= node.core.children		// Get the children
 	var many_children	= array_length(children)	// Array length
+	
+	var old_val	= coord == 0 ? node.size.width.inner : node.size.height.inner
 	
 	// 0 = X | 1 = Y
 	static resolve = [__UINode_resolve_width, __UINode_resolve_height]
@@ -950,6 +1104,8 @@ function __UI_sizes_resolve_helper(node, coord) {
 	if node.core.id != UI_ROOT_ID {
 		resolve[@ coord](node)
 	}
+	
+	//if old_val == (coord == 0 ? node.size.width.inner : node.size.height.inner) {return}
 	
 	// If node is allowed to have childrens
 	if node.internal.allowed_children {
@@ -986,8 +1142,8 @@ function _UINode_root_update(root) {
 @desc	Measures and resolves all UINodes width values
 */
 function _UI_width_pipeline(node) {
-	__UI_sizes_measure_helper(node, UICoord.X)
-	__UI_sizes_resolve_helper(node, UICoord.X)
+	__UI_sizes_measure_helper(node, UIPositionAxis.X)
+	__UI_sizes_resolve_helper(node, UIPositionAxis.X)
 }
 
 /**
@@ -996,8 +1152,8 @@ function _UI_width_pipeline(node) {
 @desc	Measures and resolves all UINodes height values
 */
 function _UI_height_pipeline(node) {
-	__UI_sizes_measure_helper(node, UICoord.Y)
-	__UI_sizes_resolve_helper(node, UICoord.Y)
+	__UI_sizes_measure_helper(node, UIPositionAxis.Y)
+	__UI_sizes_resolve_helper(node, UIPositionAxis.Y)
 }
 
 /**
@@ -1094,6 +1250,11 @@ function _UINode_draw_pipeline(root) {
 @desc	(NECESSARY TO SYSTEM WORK) UINode main step pipeline updates every logic values in UI system
 */
 function UINode_step_pipeline(){
+	static non_own_step = [
+		UINodeType.ICON, UINodeType.LABEL, UINodeType.PANEL,
+		UINodeType.BUTTON
+	]
+	
 	_input_update()
 	_update_GUI()
 	
@@ -1102,56 +1263,155 @@ function UINode_step_pipeline(){
 	// Internal update
 	_UINode_root_update(UI.screen)
 	_UI_uptade_layer()
-	_UINode_update_generic_and_focus()
 	
 	// Size and word update
 	var nodes = UI.nodes
 	var many_nodes = array_length(nodes)
 	
 	for (var i = 0; i < many_nodes; i++) {
-		var node = get_UINode_by_id(nodes[@ i])
+		var node = UI.internal.lookup_map[? nodes[i]]
 		
-		__eval_update_UINode(node)
-		_step_normal_update(node)
-		__UINode_main_step(node, node.element)
-		_clean_dirty_flags(node)
+		if node.scroll.enabled.x || node.scroll.enabled.y {
+			node.scroll.update(node)
+		}
+		
+		if !node.core.visible {continue}
+		
+		if !array_contains(non_own_step, node.element) {
+			__node_step_switch(node, node.element)
+		}
+		
+		if node.internal.has.on_change && node.internal.changed {
+			node.events.on_change(node)
+		}
+	}
+	
+	// Update hover/focus, executes generic functions and update dirty nodes
+	_UINode_update_generic_and_focus()
+	__UINode_update_dirty_node()
+	
+	ds_map_clear(UI.internal.lookup_dirty)
+	UI.dirty_nodes = []
+}
+#endregion
+
+function __resolve_auto_chain(current_safe) {
+	var safe		= current_safe
+	var safe_node	= get_UINode_by_id(safe)
+	
+	while(safe != UI_ROOT_ID) {
+		var w_is_auto = get_UINode_by_id(safe_node.core.parent).size.width.type  == UINodeValue.AUTO
+		var h_is_auto = get_UINode_by_id(safe_node.core.parent).size.height.type == UINodeValue.AUTO
+		
+		if (!w_is_auto && !h_is_auto) {break}
+		
+		safe		= safe_node.core.parent
+		safe_node	= get_UINode_by_id(safe)
+	}
+	
+	return safe
+}
+
+function __find_safe_parent(node, flag) {
+	var safe = node.core.id
+	
+	if flag == UINodeDirtyFlag.WORLD {return UI_ROOT_ID}
+	
+	while(safe != UI_ROOT_ID) {
+		var ret_stc		= get_UINode_by_id(safe)
+		var is_safe		= ret_stc.internal.is_safe
+			
+		if !is_safe[$ flag] {
+			safe = ret_stc.core.parent
+		} else {
+			if flag == UINodeDirtyFlag.SIZE {
+				safe = __resolve_auto_chain(safe)
+			}
+			break
+		}
 	}
 
-	__UINode_full_rebuild(global.UI.screen)
-	
+	return safe
 }
+
+function _register_dirty_flag(node, flag) {
+
+	if flag == UINodeDirtyFlag.GEN_FUNCTION {return}
+	
+	static create_dirty_stc = function(_node) constructor {
+		node	= _node
+		metrics	= {}
+		
+		metrics[$ UINodeDirtyFlag.SIZE]		= false
+		metrics[$ UINodeDirtyFlag.LAYOUT]	= false
+		metrics[$ UINodeDirtyFlag.WORLD]	= false
+		
+		deprecated	= false
+		importance	= -1
+	}
+	
+	var UI		= global.UI
+	var safe	= __find_safe_parent(node, flag)
+	
+	// REGISTER DIRTY ROOT
+			
+	var dirty_stc;
+	var found = false
+
+	for(var i = 0; i < array_length(UI.dirty_nodes); i ++) {
+		dirty_stc = UI.dirty_nodes[i]
+				
+		if dirty_stc.node == safe {
+			found = true
+			break
+		}
+	}
+			
+	if !found {
+		ds_map_add(UI.internal.lookup_dirty, safe, array_length(UI.dirty_nodes))
+		array_push(UI.dirty_nodes, new create_dirty_stc(safe))
+		dirty_stc = array_last(UI.dirty_nodes)
+	}
+			
+	dirty_stc.metrics[$ flag]	= true
+	dirty_stc.importance		= max(dirty_stc.importance, flag)
+	return safe
+}
+
+
 
 /**
 @ignore
 
-@param	{Struct}	The root to start measure/resolve values
-
-@desc	Measures and resolves all UINode starting from a root
+@desc	Updates all nodes that are dirty
 */
-function __UINode_full_rebuild(root) {
-	var dirty = global.UI.internal.dirty
+function __UINode_update_dirty_node() {
+	if empty_array(global.UI.dirty_nodes) {return}
+	var new_parse	= __parse_dirty_nodes()
 	
-	if (dirty.size) {
-		_UI_width_pipeline(root)
-		_UI_height_pipeline(root)
+	while(!empty_array(new_parse.size)) {
+		var size_node	= get_UINode_by_id(array_pop(new_parse.size))
+		_UI_width_pipeline(size_node)
+		_UI_height_pipeline(size_node)
 	}
 	
-	if (dirty.layout) {
-		_UINode_layout_pipeline(root)
+	while(!empty_array(new_parse.layout)) {
+		var layout_node = get_UINode_by_id(array_pop(new_parse.layout))
+		_UINode_layout_pipeline(layout_node)
 	}
 	
-	if (dirty.world) {
-		_UINode_world_pipeline(root)
+	while(!empty_array(new_parse.world)) {
+		var world_node = get_UINode_by_id(array_pop(new_parse.world))
+		_UINode_world_pipeline(world_node)
 	}
 	
-	if (dirty.text) {
-		_UINode_draw_pipeline(root)
+	while(!empty_array(new_parse.draw)) {
+		var draw_node = get_UINode_by_id(array_pop(new_parse.draw))
+		_UINode_draw_pipeline(draw_node)
 	}
 	
-	// reset
-	dirty.size   = false
-	dirty.text   = false
-	dirty.layout = false
-	dirty.world  = false
+	global.UI.internal.dirty.size	= false
+	global.UI.internal.dirty.layout	= false
+	global.UI.internal.dirty.world	= false
+	global.UI.internal.dirty.any	= false
 }
-#endregion

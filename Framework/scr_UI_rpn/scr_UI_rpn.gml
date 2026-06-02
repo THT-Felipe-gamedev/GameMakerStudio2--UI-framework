@@ -1,7 +1,8 @@
 #region RPN PUSHES FUNCTIONS
 function RPN_pushNumber(_value) {
 	return {
-		value: _value,				// Number value
+		op:		UIOperator.NOONE,
+		value:	_value,				// Number value
 		exec: function(stack, _ctx) {
 			// Pushes into the stack
 			ds_stack_push(stack, value)
@@ -14,8 +15,9 @@ function RPN_pushVar(_path) {
     var _is_global = (_path[0] == "global")
 
     return {
-		path: _path,			// Path to the value
-		len: _len,				// length of the part
+		op:		UIOperator.NOONE,
+		path:	_path,			// Path to the value
+		len:	_len,			// length of the part
 		is_global: _is_global,	// if its global
 
 		exec: function(stack, _ctx) {

@@ -136,13 +136,13 @@ function _change_selected_dropdown(node, offset = 0) {
 @desc	Changes the variable is_open in a dropdown node
 */
 function _change_dropdown_stage_auto(node) {
-	
-	var _mb_left_clicked = global.UI.input.pointer.pressed
+	static UI		= global.UI
+	static pointer	= UI.input.pointer
 	
 	// If in this frame had a click
-	if _mb_left_clicked {
+	if pointer.released {
 		// Change state
-		node.is_open = (!node.is_open && node.core.hovered)
+		node.is_open = (!node.is_open && (node.core.id == UI.hover))
 	}
 }
 
@@ -248,7 +248,7 @@ function create_dropdown_options(node_or_id, options) {
 		array_push(final.parsed, UI_parse_text(dis, node.text.span, style.font, style.xscale, style.yscale))
 	}
 	
-	_mark_dirty(node, UINodeDirtyFlag.WORLD)
+	_add_dirty(node, UINodeDirtyFlag.WORLD)
 	return final
 }
 

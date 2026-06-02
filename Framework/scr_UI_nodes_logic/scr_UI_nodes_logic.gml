@@ -1,4 +1,5 @@
 #region EACH OBJECT LOGIC
+
 #region RADIO BUTTON
 /**
 @ignore
@@ -10,10 +11,23 @@
 @see	_UINode_get_same_group
 */
 function __UI_radio_button_step_main(node) {
+	static UI = global.UI
 	// See if was clicked in it
-	if mouse_check_button_pressed(mb_left) {
-		if node.core.hovered {
-			UI_radio_button_set(node.group, node.core.id)
+	if UI.input.pointer.released {
+		if node.core.id == UI.hover {
+			
+			var _group		= node.group					// Gets group name
+			var _group_same	= UINode_get_same_group(_group)	// Gets all radio in this group
+			
+			// Turns of all elements of the group
+			for(var i = 0; i < array_length(_group_same); i ++) {
+				var node_id		= _group_same[i]			// Gets the node id
+				var node_stc	= get_UINode_by_id(node_id)	// Gets the node
+				
+				// Evaluate it
+				node_stc.active				= (node_id == node.core.id)	// If haven't id turn it off
+				node_stc.assets.image_index	= node_stc.active			// image index equals active
+			}
 		}
 	}
 }
@@ -29,7 +43,7 @@ function __UI_radio_button_step_main(node) {
 @desc	Executes the main parts for a UINode checkbox works
 */
 function __UI_checkbox_step_main(node) {
-	if node == global.UI.hover {
+	if node.core.id == global.UI.hover {
 		if global.UI.input.pointer.released {
 			
 			node.internal.changed	= true
@@ -159,7 +173,7 @@ function _dropdown_main_draw(node, _halign, _valign) {
 */
 function __UI_textbox_step_main(node) {
 	if global.UI.input.pointer.released {
-		node.focus = node.core.hovered
+		node.focus = node.core.id == global.UI.hover
 	}
 	
 	_textbox_keyboard_get(node)
@@ -180,18 +194,6 @@ function _textbox_draw_main(node) {
 
 #endregion
 
-/**
-@ignore
-@param	{Struct}	node	UINode to set internal vars and some core ones
-@desc	Sets every internal vars that are needed and some of core ones
-*/
-function __UINode_set_internal_vars(node) {
-	var prev			= node.core.hovered
-	node.core.hovered	= global.UI.hover == node
-	
-	node.internal.prev_hovered	= prev
-}
-
 #region MAIN
 /**
 @ignore
@@ -199,34 +201,41 @@ function __UINode_set_internal_vars(node) {
 */
 function __update_UI_focus() {
 	static layers		= [UILayer.OVERLAY, UILayer.FOREGROUND, UILayer.NORMAL, UILayer.BACKGROUND]
+	static layer_amount = array_length(layers)
 	static UI			= global.UI
+	static inp_m		= UI.input.pointer
+	
+	if !UI.internal.dirty.any {
+		if inp_m.delta_x == 0 && inp_m.delta_y == 0 {
+			return;
+		}
+	}
 	
 	UI.internal.prev_hover	= UI.hover		// Set last hover to actual
 	UI.hover				= undefined		// Set actual to undefined
 	
 	// For each layer
-	for (var i = 0; i < array_length(layers); i++) {
-		var _layer	= UI.layers[$ layers[i]]	// Get layer struct
-		var groups	= _layer.groups				// Get layer groups
-		
+	for (var i = 0; i < layer_amount; i++) {
+		var _layer			= UI.layers[$ layers[i]]	// Get layer struct
+		var groups			= _layer.groups				// Get layer groups
+		var group_amount	= array_length(groups)
 		// For each group
-		for(var k = array_length(groups)-1; k >= 0; k --) {
-			var nodes	= groups[@ k].nodes	// Get nodes
+		for(var k = group_amount-1; k >= 0; k --) {
+			var nodes			= groups[@ k].nodes	// Get nodes
+			var nodes_amount	= array_length(nodes)
 			
 			// For each node
-			for (var j = array_length(nodes)-1; j >= 0; j --) {
+			for (var j = nodes_amount-1; j >= 0; j --) {
 				var node = nodes[j]	// Get a UINode
+				
+				if node.internal.out_of_bound.any {continue}
 				
 				// If it isn't visible or interactive
 				if (!node.core.visible || !node.core.interactive) continue
-				
-				var p	= node.position
-				var s	= node.size
-				var l	= node.scissor.rect.inner
 					
 				// If mouse is hover, set hover to it UINode
-				if mouse_hover_rect_ext(p.x.final, p.y.final, s.width.resolved, s.height.resolved, l) {
-					UI.hover = node
+				if UI_mouse_hover_rect_ext(node) {
+					UI.hover = node.core.id
 					break
 				}
 			}
@@ -251,70 +260,15 @@ function __update_UI_focus() {
 
 /**
 @ignore
-@param	{Struct}	node	UINode to execute the generics functionss
-@desc	Executes the generics functions of a UINode ( on_click, on_change, on_unhover, ... )
-*/
-function __UI_events_run() {
-	static UI	= global.UI							// UI structure
-	var main_hover		= UI.hover					// Now hover
-	var prev_main_hover	= UI.internal.prev_hover	// Previous hover
-	
-	if main_hover != prev_main_hover {
-		
-		// ON UNHOVER
-		if prev_main_hover != undefined && prev_main_hover.internal.has.on_unhover {
-			prev_main_hover.events.on_unhover(prev_main_hover)
-		}
-		
-		// ON HOVER
-		if main_hover != undefined && main_hover.internal.has.on_hover {
-			main_hover.events.on_hover(main_hover)
-		}
-	}
-	
-	if main_hover != undefined {
-		var main_f_has	= main_hover.internal.has
-		var main_f_ev	= main_hover.events
-		
-		// If has a click and UINode has on_click
-		if UI.input.pointer.released && main_f_has.on_click {
-			
-			// CAN CLICK
-			var can_c_pass = main_f_has.can_click ? main_f_ev.can_click(main_hover) : true
-			
-			// ON CLICK
-			if can_c_pass {
-				main_f_ev.on_click(main_hover)
-			}
-		}
-	}
-}
-
-/**
-@ignore
 @desc	Updates the focus and hover UINode main and executes the generics functions
 */
 function _UINode_update_generic_and_focus() {
+	__UINode_generic_step()
 	__update_UI_focus()
-	__UI_events_run()
 }
 
-/**
-@ignore
-@param	{Struct}	node	UINode to make the main step logic
-@param	{Real}		type	The element type ( Do a step based on the element )
-
-@desc	Sets the necessary internal information of a UINode and executes the main step ( element
-	logic ) and the generic step ( every node logic, like on_click, on_hover, ... )
-*/
-function __UINode_main_step(node, type) {
-	static inp	= global.UI.input
-	
-	__UINode_set_internal_vars(node)
-	if !node.core.visible	{exit}
-	
-	var has	= node.internal.has
-	switch(type) {
+function __node_step_switch(node, element) {
+	switch(element) {
 		case UINodeType.RADIO_BUTTON:
 			__UI_radio_button_step_main(node)
 		break;
@@ -331,31 +285,113 @@ function __UINode_main_step(node, type) {
 			__UI_dropdown_step_main(node)
 		break;
 	}
+}
+
+function __UINode_generic_step() {
+	static inp		= global.UI.input
+	static kb_char	= inp.keyboard.char
+	static kb_key	= inp.keyboard.key
 	
-	// ON CHANGE
-	if has.on_change && node.internal.changed {
-		node.events.on_change(node)
+	var prev_h	= global.UI.internal.prev_hover
+	var prev_f	= global.UI.internal.prev_focus
+	var now_h	= global.UI.hover
+	var now_f	= global.UI.focus
+	
+	if prev_h != now_h {
+		
+		// ON UNHOVER
+		if prev_h != undefined {
+			var node = get_UINode_by_id(prev_h)	// Get node
+			
+			if node.internal.has.on_unhover {
+				node.events.on_unhover(node)
+			}
+		}
+		
+		// ON HOVER
+		if now_h != undefined {
+			var node = get_UINode_by_id(now_h)	// Get node
+			
+			if node.internal.has.on_hover {
+				node.events.on_hover(node)
+			}
+		}
+		
 	}
 	
-	if node == global.UI.focus || node == global.UI.internal.prev_focus {
+	// If has an input
+	var had_inp	= (kb_char != "" || kb_key > 0)
+	
+	// ON CLICK / CAN CLICK
+	if inp.pointer.released && now_h != undefined {
+		var node = get_UINode_by_id(now_h)
+		if node.internal.has.on_click {
+			
+			// CAN CLICK
+			var can_c_pass = node.internal.has.can_click ? 
+				node.events.can_click(node) :
+				true
+			
+			// ON CLICK
+			if can_c_pass {
+				node.events.on_click(node)
+			}
+		}
+	}
+	
+	// ON INPUT
+	if now_f != undefined && had_inp {
+		var node = get_UINode_by_id(now_f)	// Get node
 		
-		// Last was the UINode
-		var last_me	= node != global.UI.focus
-		
-		// If has an input
-		var had_inp	= (inp.keyboard.char != "" || inp.keyboard.key > 0)
-		
-		// ON INPUT
-		if node == global.UI.focus && had_inp && has.on_input {
+		if node.internal.has.on_input {
 			node.events.on_input(node)
 		}
-		
-		// ON SUBMIT
-		if (last_me || inp.keyboard.key == vk_enter) && has.on_submit {
-			node.events.on_submit(node)
-		}
 	}
 	
-	node.internal.changed	= false
+	// ON SUBMIT
+	var sub_node = undefined
+	
+	if (prev_f != undefined) {
+		sub_node = get_UINode_by_id(prev_f)	// Get node
+
+	} else if (kb_key == vk_enter && now_f != undefined) {
+		sub_node = get_UINode_by_id(now_f)	// Get node
+	}
+	
+	if sub_node != undefined && sub_node.internal.has.on_submit {
+		sub_node.events.on_submit(sub_node)
+	}
 }
 #endregion
+
+function _out_of_bound_eval(node) {
+	var limit	= node.scissor.rect.inner
+	var ofb		= node.internal.out_of_bound
+	
+	var render = node.internal.inner_render
+	var _x = render.x
+	var _y = render.y
+	var _w = render.width
+	var _h = render.height
+	
+	var _bound_x = limit.x + limit.w
+	var _bound_y = limit.y + limit.h
+	
+	// If x is ahead the bound's x or the x plus width is behind the start cut x
+	if (_x > _bound_x) {
+		ofb.x = true
+	} else {
+		ofb.x = (_x + _w < limit.x)
+	}
+	
+	// If y is ahead the bound's y or the y plus height is behind the start cut y
+	if (_y > _bound_y) {
+		ofb.y = true
+	} else {
+		ofb.y = (_y + _h < limit.y)
+	}
+	
+	// If both are out, set true
+	ofb.any	 = ofb.x || ofb.y
+	ofb.both = ofb.x && ofb.y
+}

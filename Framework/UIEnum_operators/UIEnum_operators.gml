@@ -15,5 +15,7 @@ enum UIOperator {
 	PERCENTAGE,
 	UNITARY_NEG,
 	UNITARY_POS,
+	NOONE,
 	UNKNOWN
+	
 }

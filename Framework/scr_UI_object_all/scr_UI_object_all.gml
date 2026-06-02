@@ -76,6 +76,44 @@ function UI_mouse_hover_rect(node) {
 	return _hover
 }
 
+/**
+@public
+@pure
+@self global
+
+@param	{Struct}	limits	The limits { x, y, w, h } of the rect ( optional )
+
+@desc	Returns if mouse is hover rect considering limits of the rectangle
+*/
+function UI_mouse_hover_rect_ext(node_or_id) {
+	var node		= _UINode_resolve(node_or_id)
+	static pointer	= global.UI.input.pointer
+	
+	// If any up value was false, returns false
+	if node.internal.out_of_bound.any {
+		return false
+	}
+	
+	#region SET THE POINTS OF THE HITBOX
+	var limit = node.scissor.rect.inner
+	
+	var _x = node.position.x.final
+	var _y = node.position.y.final
+	
+	var _w = node.size.width.resolved
+	var _h = node.size.height.resolved
+
+	// Set the points of the rectangle hitbox
+	var p1 = max(_x, limit.x)	// X1
+	var p2 = max(_y, limit.y)	// Y1
+	
+	var p3 = min(p1	+ _w, limit.x + limit.w)	// X2
+	var p4 = min(p2	+ _h, limit.y + limit.h)	// Y2
+	#endregion
+	
+	var _hover = point_in_rectangle(pointer.x, pointer.y, p1, p2, p3, p4)
+	return _hover
+}
 #endregion
 
 #region MAIN FUNCTIONS
@@ -83,12 +121,11 @@ function UI_mouse_hover_rect(node) {
 /**
 @ignore
 
-@param	{Struct | String}	node_or_id	The UINode or it id
+@param	{Struct}	node The UINode to draw
 
 @desc	draws a UINode basic things
 */
-function _draw_preset_UI_element(node_or_id) {
-	var node			= _UINode_resolve(node_or_id)
+function _draw_preset_UI_element(node) {
 	var inner_render	= node.internal.inner_render
 	
 	var isNormal = false
@@ -108,10 +145,12 @@ function _draw_preset_UI_element(node_or_id) {
 		
 		case UINodeType.BUTTON:
 			draw_UINode_sprite(node)
+			if node.text.content != ""
 			_draw_UI_text_in_rect(node.text, inner_render, node.inner.halign, node.inner.valign)
 		break;
 		
 		case UINodeType.LABEL:
+			if node.text.content != ""
 			_draw_UI_text_in_rect(node.text, inner_render, node.inner.halign, node.inner.valign)
 		break;
 		

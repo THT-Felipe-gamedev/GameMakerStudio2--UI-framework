@@ -60,7 +60,7 @@ function _textbox_keyboard_get(node) {
 	var txt			= last_txt
 	var pos			= string_length(txt)
 	
-	_mark_dirty(node, UINodeDirtyFlag.WORLD)
+	_add_dirty(node, UINodeDirtyFlag.WORLD)
 
 	#region INPUTS
 	// CTRL

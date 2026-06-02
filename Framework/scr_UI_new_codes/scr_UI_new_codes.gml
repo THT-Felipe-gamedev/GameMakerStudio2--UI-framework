@@ -55,7 +55,7 @@ function array_count(value, array) {
 @param	{Array<Real>}	array	Array to get the greater value
 @return	{Real}	The greater value found
 
-@desc	Gets the greater value in an array and returns it. If array is empty, returns undefined
+@desc	Gets the greater value in an array and returns it. If array is empty, returns 0
 */
 function array_max(array) {
 	var length	= array_length(array)
@@ -79,7 +79,7 @@ function array_max(array) {
 @param	{Array<Real>}	array	Array to get the lowest value
 @return	{Real}	The lowest value found
 
-@desc	Gets the lowest value in an array and returns it. If array is empty, returns undefined
+@desc	Gets the lowest value in an array and returns it. If array is empty, returns 0
 */
 function array_min(array) {
 	var length	= array_length(array)
@@ -318,5 +318,10 @@ function file_name_validator(file_name) {
 @desc	Checks if a value is an asset. If it is, returns true, else returns false
 */
 function is_asset(n) {
-	return asset_get_type(n) != asset_unknown
+	var lookup = global.UI.internal.lookup_asset
+	if !ds_map_exists(lookup, n) {
+		ds_map_set(lookup, n, asset_get_type(n) != asset_unknown)
+	}
+	
+	return lookup[? n]
 }

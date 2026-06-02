@@ -55,9 +55,9 @@ function __UINode_destroyer(node, main) {
 	if main {
 		if parent != undefined {
 			if parent.core.id == UI_ROOT_ID {
-				_mark_dirty(parent, UINodeDirtyFlag.LAYOUT)
+				_add_dirty(parent, UINodeDirtyFlag.LAYOUT)
 			} else {
-				_mark_dirty(parent, UINodeDirtyFlag.ALL)
+				_add_dirty(parent, UINodeDirtyFlag.SIZE)
 			}
 		}
 	}
@@ -294,19 +294,11 @@ function draw_UINode_text(node) {
 	var style		= node.text.style	// Gets the text struct
 	var _last_bound	= {}				// Scissors bound
 		
-	// If scissors is enabled, cut it and returns normal bounds
-	if node.scissor.enabled {
-		_last_bound = node.scissor.apply(node)	// Apply
-	}
+	node.scissor.apply(node)	// Apply scissor
 	
 	// Function to draw text
     _draw_UI_text_in_rect(node.text, node.inner, style.halign, style.valign)
 	
-	// Sets the scissor to normal
-	if node.scissor.enabled {
-		gpu_set_scissor(_last_bound) // Reset
-	}
-		
 	// Set color and alpha to normal
     draw_set_alpha(1)
 	draw_set_colour(c_white)
@@ -391,25 +383,38 @@ function _eval_UI_group_elements(layer_id, group_name = "default_group") {
 @desc	Draw all main parts of the UINodes in order
 */
 function draw_all_UI_elements(){
-	static order = [UILayer.BACKGROUND, UILayer.NORMAL, UILayer.FOREGROUND, UILayer.OVERLAY]
+	// BEFORE DRAW
+	var last_s						= gpu_get_scissor()
+	global.UI.internal.last_scissor	= last_s
+	static order	= [UILayer.BACKGROUND, UILayer.NORMAL, UILayer.FOREGROUND, UILayer.OVERLAY]
+	static order_l	= array_length(order)
 	
 	// LAYER ORDER
-	for (var i = 0; i < array_length(order); i++) {	
-		var _groups = global.UI.layers[$ order[i]].groups	// Get groups of that layer
+	for (var i = 0; i < order_l; i++) {	
+		var _groups		= global.UI.layers[$ order[i]].groups	// Get groups of that layer
+		var groups_l	= array_length(_groups)
 		
 		// GROUP ORDER
-		for(var j = 0; j < array_length(_groups); j ++) {
-			var nodes = _groups[j].nodes					// Get the list of UINodes of a group
+		for(var j = 0; j < groups_l; j ++) {
+			var nodes	= _groups[j].nodes	// Get the list of UINodes of a group
+			var nodes_l	= array_length(nodes)
 			
 			// ELEMEMENTS ORDER
-			for (var k = 0; k < array_length(nodes); k ++) {
-				var node = nodes[k]							// Get one UINode of the list
-				
+			for (var k = 0; k < nodes_l; k ++) {
+				var node	= nodes[k]		// Get one UINode of the list
 				// Excecute the main preset drawer
-				if node.core.visible
-				_draw_preset_UI_element(node)
+				if node.core.visible && !node.internal.out_of_bound.any {
+					_draw_preset_UI_element(node)
+				}
 			}
 		}
+	}
+	// AFTER DRAW
+	var new_s = global.UI.internal.last_scissor
+	
+	if last_s.x == new_s.x && last_s.y == new_s.y 
+	&& last_s.w == new_s.w && last_s.h == new_s.h {
+		gpu_set_scissor(last_s)
 	}
 }
 #endregion
@@ -432,20 +437,16 @@ function _UINode_uptade_scroll(node) {
 	}
 	
 	// Mark itself dirty
-	_mark_dirty(node, UINodeDirtyFlag.WORLD)
+	_add_dirty(node, UINodeDirtyFlag.WORLD)
 	
 	#region UPTADE VELOCITY
 	// If mouse is hover the UINode and wheel in moviment
 	if scroll.must_hover {
-		if (node.core.hovered) {
+		if (node.core.id == global.UI.hover) {
 			_scroll_apply_force(scroll, input_scroll)
 		}
 	} else {
-		var p = node.position
-		var s = node.size
-		var r = node.scissor.rect.inner
-
-		if mouse_hover_rect_ext(p.x.final, p.y.final, s.width.outer, s.height.outer, r) {
+		if UI_mouse_hover_rect_ext(node) {
 			_scroll_apply_force(scroll, input_scroll)
 		}
 	}
@@ -529,8 +530,10 @@ function GUI_height()	{return display_get_gui_height()}
 function set_UINode_translate_x(node_or_id, value) {
 	var node = _UINode_resolve(node_or_id)
 	
-	node.offset.translate.x = value
-	_mark_dirty(node, UINodeDirtyFlag.WORLD)
+	if node.offset.translate.x.raw == value {return}
+	node.offset.translate.x.raw		= value
+	node.offset.translate.x.dirty	= true
+	_add_dirty(node, UINodeDirtyFlag.WORLD)
 }
 
 /**
@@ -544,8 +547,10 @@ function set_UINode_translate_x(node_or_id, value) {
 function set_UINode_translate_y(node_or_id, value) {
 	var node = _UINode_resolve(node_or_id)
 	
-	node.offset.translate.y = value
-	_mark_dirty(node, UINodeDirtyFlag.WORLD)
+	if node.offset.translate.y.raw == value {return}
+	node.offset.translate.y.raw		= value
+	node.offset.translate.y.dirty	= true
+	_add_dirty(node, UINodeDirtyFlag.WORLD)
 }
 
 /**
@@ -562,8 +567,9 @@ function get_UINode_by_id(_id) {
 	static UI	= global.UI
 	if _id == UI_ROOT_ID {return UI.screen}	// If is root
 	
+	if _id == undefined {return undefined}
 	// Normal UINode
-	return ds_map_find_value(UI.internal.lookup_map, _id)
+	return UI.internal.lookup_map[? _id]
 }
 
 /**
@@ -645,7 +651,7 @@ function UINode_add_children(node, child_or_id, index = -1) {
 		array_insert(node.core.children, index, child_id)
 	}
 
-	_mark_dirty(node, UINodeDirtyFlag.ALL)
+	_add_dirty(node, UINodeDirtyFlag.SIZE)
 }
 
 /**
@@ -675,10 +681,9 @@ function UI_get_value_type(value) {
 	
 	if is_string(value) {
 		var trim_upper = string_upper(string_trim(value))
-		
 		if trim_upper == "AUTO"					return UINodeValue.AUTO
-		if string_char_at(trim_upper, 1) == "="	return UINodeValue.EXPRESSION
-		if string_contains("%", trim_upper)		return UINodeValue.PERCENTAGE
+		if string_starts_with(trim_upper, "=")	return UINodeValue.EXPRESSION
+		if string_ends_with(trim_upper, "%")	return UINodeValue.PERCENTAGE
 		
 		if string_contains("REF NODE", trim_upper)	return UINodeValue.NODE_REFERENCE
 		
@@ -803,16 +808,15 @@ function show_UINode_except(class_exc){
 @public
 @pure
 
-@param	{Struct | String} node_or_id The UINode (or it id) to draw
+@param	{Struct} node The UINode to draw
 @desc	Draws the UIElement passed in argument
 */
-function draw_UINode_sprite(node_or_id) {
-	var node = _UINode_resolve(node_or_id)
-	if node.assets.sprite_index == undefined {exit}
+function draw_UINode_sprite(node) {
+	if node.assets.sprite_index == undefined	{return}
+	if !node.core.visible						{return}
 	
 	#region SET VARIABLES
 	// Visible, sprite and image
-	var _vis = node.core.visible
 	var _spr = node.assets.sprite_index
 	var _img = node.assets.image_index
 	
@@ -825,27 +829,16 @@ function draw_UINode_sprite(node_or_id) {
 	var _h = node.size.height.resolved
 	#endregion
 
-	if _vis { // If it says to be visible
+	var x1 = _p_x	// Position x
+	var y1 = _p_y	// Position y
 		
-		var x1 = _p_x	// Position x
-		var y1 = _p_y	// Position y
+	// Normal scissors keeper
+	var _last_bound = {}
 		
-		// Normal scissors keeper
-		var _last_bound = {}
+	_last_bound = node.scissor.apply(node)	// Apply scissor
 		
-		// Sees if scissors is enabled
-		if node.scissor.enabled {
-			_last_bound = node.scissor.apply(node)	// Apply
-		}
-		
-		// Draws the sprite
-		draw_sprite_stretched_ext(_spr, _img, x1, y1, _w, _h, node.core.color, node.core.alpha)
-		
-		// Resets scissors back to normal
-		if node.scissor.enabled {
-			gpu_set_scissor(_last_bound)
-		}
-	}
+	// Draws the sprite
+	draw_sprite_stretched_ext(_spr, _img, x1, y1, _w, _h, node.core.color, node.core.alpha)
 }
 #endregion
 
@@ -860,8 +853,10 @@ function draw_UINode_sprite(node_or_id) {
 @desc	Destroy an UINode, except their object
 */
 function destroy_UINode(node_or_id) {
-	var node		= _UINode_resolve(node_or_id)
+	var node	= _UINode_resolve(node_or_id)
+	
 	var _children	= node.core.children		// Children array
+	var many_c		= array_length(_children)	// Amount of children
 
 	// Destroy all children with itself
 	while(array_length(_children)) {
