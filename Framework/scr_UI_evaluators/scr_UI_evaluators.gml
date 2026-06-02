@@ -63,7 +63,6 @@ function __evaluate_error(_value, name, allowed, _part) {
 		"BOOL",
 		"ARRAY",
 		"STRUCT",
-		"ASSET",
 		"CALLABLE",
 		
 		"EXPRESSION",
@@ -303,7 +302,7 @@ function _evaluate_UINode(config) {
 		__UI_register_props(METRIC, metrics_accept, schema)
 		__UI_register_props(ABS_AND_RELA, absolute_and_relative, schema)
 		
-		__UI_register_props(ASSETS,  [UINodeValue.ASSET],	schema)
+		__UI_register_props(ASSETS,  [UINodeValue.REAL],	schema)
 		__UI_register_props(STRING,  [UINodeValue.STRING],	schema)
 		__UI_register_props(STRUCT,  [UINodeValue.STRUCT],	schema)
 		

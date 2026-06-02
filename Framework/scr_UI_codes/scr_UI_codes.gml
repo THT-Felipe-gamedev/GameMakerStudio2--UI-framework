@@ -668,11 +668,8 @@ function UI_get_value_type(value) {
 	if is_bool(value)		{return UINodeValue.BOOL}
 	if is_array(value)		{return UINodeValue.ARRAY}
 	
-	if is_asset(value)		{
-		// If asset == script, consider it CALLABLE
-		if asset_get_type(value) == asset_script {return UINodeValue.CALLABLE}
-		return UINodeValue.ASSET
-	}
+	// If asset == script, consider it CALLABLE
+	if asset_get_type(value) == asset_script {return UINodeValue.CALLABLE}
 	if is_numeric(value)	{return UINodeValue.REAL}
 	
 	if is_callable(value)	{return UINodeValue.CALLABLE}

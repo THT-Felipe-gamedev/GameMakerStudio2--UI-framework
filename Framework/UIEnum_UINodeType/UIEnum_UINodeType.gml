@@ -23,7 +23,6 @@ enum UINodeValue {
 	BOOL,
 	ARRAY,
 	STRUCT,
-	ASSET,
 	CALLABLE,
 	
 	EXPRESSION,
